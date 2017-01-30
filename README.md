@@ -13,13 +13,13 @@ Note; the addon XML file allows the
 ## Master-Slave
 The foundation for establishing multiple connections and switching from the slave to the master when rewrited on a write.
 
-###Config:
+### Config:
 - ```$config['db']['adapter'] = 'Masterslave';```
 
 ## Multi-Master
 Extends master/slave to allow any slave to recieve xf_session_activity writes.
 
-###Config:
+### Config:
 - ```
 $config['db']['adapter'] = 'Multimaster';
 ```
