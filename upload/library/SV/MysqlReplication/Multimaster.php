@@ -20,13 +20,10 @@ class SV_MysqlReplication_Multimaster extends SV_MysqlReplication_Masterslave
                 $bind[2]   // ip
             );
             $hashIndex = floor($hashKey % count($this->_slave_config));
-            if ($this->_connectedSlaveId != $hashIndex)
+            if ($this->_connectSlaveSetup($hashIndex))
             {
-                $this->closeConnection();
-                $this->_connectedSlaveId = $hashIndex;
-                $this->_config = $this->_slave_config[$this->_connectedSlaveId];
                 $this->_connect();
-                $this->postConnect();
+                $this->postConnect(true);
             }
 
             return false;

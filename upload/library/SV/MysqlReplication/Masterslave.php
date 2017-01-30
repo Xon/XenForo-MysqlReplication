@@ -9,7 +9,7 @@ class SV_MysqlReplication_Masterslave extends Zend_Db_Adapter_Mysqli
     protected $_master_config = null;
     protected $_slave_config = null;
     protected $_setStrictMode = true;
-    protected $_attributesToCopy = array('host', 'port', 'username', 'password', 'dbname');
+    protected $_attributesToCopy = array('host', 'port', 'username', 'password', 'dbname', 'charset');
 
     public function __construct($config)
     {
@@ -42,43 +42,63 @@ class SV_MysqlReplication_Masterslave extends Zend_Db_Adapter_Mysqli
         parent::beginTransaction();
     }
 
+    protected function _connectMasterSetup()
+    {
+        $this->_connectedSlaveId = null;
+        $this->_config = $this->_master_config;
+        $this->_connectedMaster = true;
+        $this->closeConnection();
+
+        return true;
+    }
+
+    protected function _connectSlaveSetup($slaveId = null)
+    {
+        if ($slaveId === null)
+        {
+            $count = count($this->_slave_config);
+            $slaveId =($count > 1) ? mt_rand(0,$count-1) : 0;
+        }
+        if ($slaveId === $this->_connectedSlaveId)
+        {
+            return false;
+        }
+
+        $this->_connectedSlaveId = $slaveId;
+        $this->_config = $this->_slave_config[$this->_connectedSlaveId];
+
+        $this->_connectedMaster = false;
+        $this->closeConnection();
+
+        return true;
+    }
+
     protected function _connect()
     {
         if ($this->_usingMaster && (!$this->_connectedMaster || $this->_connection == null))
         {
-            $this->_connectedSlaveId = null;
-            $this->_config = $this->_master_config;
-            $this->_connectedMaster = true;
-            $this->closeConnection();
-            $newConnection = true;
+            $newConnection = $this->_connectMasterSetup();
+            $writable = true;
         }
         else if (!$this->_usingMaster && ($this->_connectedMaster || $this->_connection == null))
         {
-            $count = count($this->_slave_config);
-            $this->_connectedSlaveId = ($count > 1) ? mt_rand(0,$count-1) : 0;
-            $this->_config = $this->_slave_config[$this->_connectedSlaveId];
-
-            $this->_connectedMaster = false;
-            $this->closeConnection();
-            $newConnection = true;
+            $newConnection = $this->_connectSlaveSetup();
+            $writable = false;
         }
         else
         {
             $newConnection = false;
+            $writable = false;
         }
         parent::_connect();
         if ($newConnection)
         {
-            $this->postConnect();
+            $this->postConnect($writable);
         }
     }
 
-    public function postConnect()
+    public function postConnect($writable)
     {
-        if (!empty($this->_config['charset']))
-        {
-            mysqli_set_charset($this->_connection, $this->_config['charset']);
-        }
         if ($this->_setStrictMode)
         {
             $this->_connection->query("SET @@session.sql_mode='STRICT_ALL_TABLES'");
