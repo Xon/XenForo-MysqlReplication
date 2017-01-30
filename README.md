@@ -34,7 +34,7 @@ Requires:
 Recommended:
 - APCu must be installed & enabled.
 
-###Config:
+### Config:
 - ```
 $config['db']['adapter'] = 'Galera';
 // how often to check for down nodes. (in seconds, supports fractions of a second) Highly racey with last checker winning. 
