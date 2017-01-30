@@ -20,7 +20,7 @@ class SV_MysqlReplication_Multimaster extends SV_MysqlReplication_Masterslave
         }
         $doDiscovery = true;
         $topology = false;
-        $masterId = 0;
+        $masterId = 0; // wsrep_incoming_addresses is sorted by node index
 
         // probe if we know the topology or need to re-probe for the topology
         if (function_exists('apcu_fetch'))
@@ -78,7 +78,7 @@ msg('mysqlnd.net_read_timeout', ini_get('mysqlnd.net_read_timeout'));
                 }
                 // 'wsrep_cluster_size', 'wsrep_local_index',
                 $results = $this->_connection->query("
-                     select * from information_schema.GLOBAL_STATUS where VARIABLE_NAME in ('wsrep_ready', 'wsrep_connected', 'wsrep_local_state_comment', 'wsrep_incoming_addresses');
+                     select * from information_schema.GLOBAL_STATUS where VARIABLE_NAME in ('wsrep_ready', 'wsrep_connected', 'wsrep_local_state_comment', 'wsrep_sst_method', 'wsrep_incoming_addresses');
                 ");
                 $row = $results->fetch_assoc();
                 if (empty($row))
@@ -104,7 +104,7 @@ msg('mysqlnd.net_read_timeout', ini_get('mysqlnd.net_read_timeout'));
                     $hostOk = false;
                     if ($row['wsrep_ready'] == 'ON' &&
                         $row['wsrep_connected'] == 'ON' &&
-                        ($row['wsrep_local_state_comment'] == 'Synced' || $row['wsrep_local_state_comment'] == 'Donor')
+                        ($row['wsrep_local_state_comment'] == 'Synced' || ($row['wsrep_local_state_comment'] == 'Donor' && $row['wsrep_sst_method'] == 'xtrabackup'))
                     {
                         // host OK. try another node, exclude this one
                         $useTopology = true;
