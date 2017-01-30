@@ -9,6 +9,7 @@ class SV_MysqlReplication_Masterslave extends Zend_Db_Adapter_Mysqli
     protected $_master_config = null;
     protected $_slave_config = null;
     protected $_setStrictMode = true;
+    protected $_attributesToCopy = array('host', 'port', 'username', 'password', 'dbname');
 
     public function __construct($config)
     {
@@ -18,6 +19,21 @@ class SV_MysqlReplication_Masterslave extends Zend_Db_Adapter_Mysqli
         $this->_setStrictMode = isset($xfconfig->db->strictMode) ? true : (boolean)$xfconfig->db->strictMode;
         $this->_slave_config = empty($xfconfig->db->slaves) ? array() : $xfconfig->db->slaves->toArray();
         $this->_usingMaster = empty($this->_slave_config);
+        foreach($this->_slave_config as &$slave)
+        {
+            $this->copyAttributes($slave, $this->_master_config);
+        }
+    }
+
+    public function copyAttributes(array &$slave, array $master)
+    {
+        foreach($this->_attributesToCopy as $attribute)
+        {
+            if (!isset($slave[$attribute]) && isset($master[$attribute]))
+            {
+                $slave[$attribute] = $master[$attribute];
+            }
+        }
     }
 
     public function beginTransaction()
@@ -100,12 +116,6 @@ class SV_MysqlReplication_Masterslave extends Zend_Db_Adapter_Mysqli
             if ($this->checkForWrites($sql_string, $bind))
             {
                 $this->_usingMaster = true;
-                if ($this->_usingMaster) {
-                    print "<pre>";
-                    print $sql_string;
-                    debug_print_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS);
-                    print "</pre>";
-                }
             }
         }
 

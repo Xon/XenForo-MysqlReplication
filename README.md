@@ -4,6 +4,9 @@ Master/slave (with N slaves) replication while being slightly smarter than check
 
 Connects to the slave(s) 1st, and then talks to master if required.
 
+Note; any attributes* not in the slave config are pulled form the master config.
+
+*(host,port,username,password,dbname)
 
 Example config:
 ```
@@ -21,16 +24,10 @@ $config['db']['slaves'] = array(
     array(
         'host' => '127.0.0.1',
         'port' = '3307',
-        'username' => 'username',
-        'password' => 'pass',
-        'dbname' => 'db',
     ),
     array(
         'host' => '127.0.0.1',
         'port' => '3308',
-        'username' => 'username',
-        'password' => 'pass',
-        'dbname' => 'db',
     ),
 */    
 );
