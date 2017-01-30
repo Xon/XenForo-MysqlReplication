@@ -37,8 +37,8 @@ Recommended:
 ### Config:
 - ```
 $config['db']['adapter'] = 'Galera';
-// how often to check for down nodes. (in seconds, supports fractions of a second) Highly racey with last checker winning. 
-$config['db']['galera']['discovery'] = 10;
+// how often to check for down nodes. (in seconds) Highly racey with last checker winning. 
+$config['db']['galera']['discovery'] = 5;
 $config['db']['galera']['apcu_prefix'] = ''; // apcu cache prefix keys
 ```
 
