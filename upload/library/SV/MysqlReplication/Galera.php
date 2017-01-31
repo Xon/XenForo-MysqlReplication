@@ -38,19 +38,6 @@ class SV_MysqlReplication_Multimaster extends SV_MysqlReplication_Masterslave
         $useTopology = true;
         if ($doDiscovery || $topology === false)
         {
-/* -- verify and test, want a short timeout (ON CONNECT) on the assumption there is another node to use
-ini_set('connect_timeout', $timeout);
-ini_set('default_socket_timeout', $timeout);
-ini_set('mysql.connect_timeout', $timeout);
-ini_set('mysqlnd.net_read_timeout', $timeout);
-
-echo 'PHP params:' . PHP_EOL;
-msg('connect_timeout', ini_get('connect_timeout'));
-msg('default_socket_timeout', ini_get('default_socket_timeout'));
-msg('mysql.connect_timeout', ini_get('mysql.connect_timeout'));
-msg('mysqlnd.net_read_timeout', ini_get('mysqlnd.net_read_timeout'));
-*/
-
             $useTopology = false;
             $lastError = null;
             do
