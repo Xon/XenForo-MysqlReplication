@@ -3,6 +3,7 @@
 class SV_MysqlReplication_Multimaster extends SV_MysqlReplication_Masterslave
 {
     protected $topology = null;
+    protected $topologyDiscoverying = false;
     protected $prefix = null;
 
     public function __construct($config)
@@ -12,12 +13,13 @@ class SV_MysqlReplication_Multimaster extends SV_MysqlReplication_Masterslave
         $this->discovery = empty($config['galera']['discovery']) ? 5 : max(intval($config['galera']['discovery']), 1);
     }
 
-    protected function _discoverTopology($hasConnection)
+    protected function _discoverTopology()
     {
-        if ($this->topology !== null)
+        if ($this->topology !== null || $this->topologyDiscoverying)
         {
             return;
         }
+        $this->topologyDiscoverying = true;
         $doDiscovery = true;
         $topology = false;
         $masterId = 0; // wsrep_incoming_addresses is sorted by node index
@@ -54,9 +56,13 @@ msg('mysqlnd.net_read_timeout', ini_get('mysqlnd.net_read_timeout'));
             do
             {
                 // remove this host from consideration
-                if ($this->_master_config['host'] == $this->config['host'] && $this->_master_config['post'] == $this->config['post'])
+                if (empty($this->_master_config['invalid']) && $this->_master_config['host'] == $this->config['host'] && $this->_master_config['post'] == $this->config['post'])
                 {
-                    //TODO: master is dead :(
+                    $this->_master_config['invalid'] = true;
+                    $this->_connectedSlaveId = null;
+                    $this->_config = $this->_master_config;
+                    $this->_connectedMaster = true;
+                    $this->closeConnection();
                 }
                 foreach($this->_slave_config as $key => &$connection)
                 {
@@ -65,14 +71,29 @@ msg('mysqlnd.net_read_timeout', ini_get('mysqlnd.net_read_timeout'));
                         unset($this->_slave_config[$key]);
                     }
                 }
-                // connect to any host. This is racy, but that is ok.
+                // pick a random surviving slave.  This is racy, but that is ok.
+                if ($this->_connection === null)
+                {
+                    $count = count($this->_slave_config);
+                    $this->_connectedSlaveId = ($count > 1) ? mt_rand(0,$count-1) : 0;
+                    $this->_config = $this->_slave_config[$this->_connectedSlaveId];
+                    $this->_connectedMaster = false;
+                    $this->closeConnection();
+                }
                 try
                 {
                     $this->_connect();
                 }
-                catch(Exception $e)
+                catch(Zend_Db_Statement_Mysqli_Exception $e)
                 {
+                    $this->closeConnection();
                     $lastError = $e;
+                    // https://dev.mysql.com/doc/refman/5.6/en/error-messages-client.html
+                    // https://dev.mysql.com/doc/refman/5.6/en/error-messages-server.html
+                    if (mysqli_connect_error() == 0)
+                    {
+                       throw $e;
+                    }
                     continue;
                 }
                 // 'wsrep_cluster_size', 'wsrep_local_index',
@@ -111,9 +132,10 @@ msg('mysqlnd.net_read_timeout', ini_get('mysqlnd.net_read_timeout'));
                     }
                 }
                 // host not OK. try another node
+                $this->closeConnection();
             }
             //TODO: need to fix this loop condition
-            while ( ... );
+            while ( $this->_connection !== null || $this->_slave_config );
 
             if (!$useTopology)
             {
@@ -137,6 +159,10 @@ msg('mysqlnd.net_read_timeout', ini_get('mysqlnd.net_read_timeout'));
                 $this->copyAttributes($slave, $this->_master_config);
                 $this->_slave_config[] = $slave;
             }
+
+            //$this->_connectedSlaveId
+            //$this->_connectedMaster
+            //$this->_usingMaster
         }
 
         return;
@@ -144,41 +170,107 @@ msg('mysqlnd.net_read_timeout', ini_get('mysqlnd.net_read_timeout'));
 
     protected function _connectMasterSetup()
     {
-        if (!parent::_connectMasterSetup())
+        if ($this->topologyDiscoverying || !parent::_connectMasterSetup())
         {
             return false;
         }
-        $this->_discoverTopology();
-
+        try
+        {
+            $this->_discoverTopology();
+        }
+        finally
+        {
+            $this->topologyDiscoverying = false;
+        }
         return $this->_connection === null;
     }
 
     protected function _connectSlaveSetup($slaveId = null)
     {
-        if (!parent::_connectSlaveSetup($slaveId))
+        if ($this->topologyDiscoverying || !parent::_connectSlaveSetup($slaveId))
         {
             return false;
         }
-        $this->_discoverTopology();
+        try
+        {
+            $this->_discoverTopology();
+        }
+        finally
+        {
+            $this->topologyDiscoverying = false;
+        }
 
         return $this->_connection === null;
     }
 
-    //SHOW GLOBAL STATUS LIKE 'wsrep_local_index';
-    //SHOW GLOBAL STATUS LIKE 'wsrep_cluster_size';
-    //SHOW GLOBAL STATUS LIKE 'wsrep_cluster_status'; == 'Primary'
-    //SHOW GLOBAL STATUS LIKE 'wsrep_ready'; == 'ON'
-    //
-    public function postConnect($writable)
-    {
-/*
-        $this->_discoverTopology();
+    protected $lastQueryReadonly = false;
 
-        print "<pre>";
-        var_dump($row);
-        debug_print_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS);
-        print "</pre>";
-*/
-        parent::postConnect($writable);
+    public function checkForWrites($sql, $bind)
+    {
+        $this->lastQueryReadonly = parent::checkForWrites($sql, $bind);
+        return $this->lastQueryReadonly;
+    }
+
+    public function query($sql, $bind = array())
+    {
+        $this->lastQueryReadonly = false;
+        try
+        {
+            return parent::query($sql, $bind);
+        }
+        catch(Zend_Db_Statement_Mysqli_Exception $e)
+        {
+            // https://dev.mysql.com/doc/refman/5.6/en/error-messages-client.html
+            // https://dev.mysql.com/doc/refman/5.6/en/error-messages-server.html
+            // mark the server as failed depending on the errror
+            $lastError = mysqli_errno();
+            switch($lastError)
+            {
+                // client-side errors that we can ignore
+                case 2058: // This handle is already connected. Use a separate handle for each connection.
+                case 2060: // There is an attribute with the same name already
+                case 2057: // The number of columns in the result set differs from the number of bound buffers. You must reset the statement, rebind the result set columns, and execute the statement again
+                case 2056: // Statement closed indirectly because of a preceeding %s() call
+                case 2053: // Attempt to read a row while there is no result set associated with the statement
+                case 2052: // Prepared statement contains no metadata
+                case 2051: // Attempt to read column without prior row fetch
+                case 2050: // Row retrieval was canceled by mysql_stmt_close() call
+                case 2036: // Using unsupported buffer type: %d (parameter: %d)
+                case 2035: // Can't send long data for non-string/non-binary data types (parameter: %d)
+                case 2034: // Invalid parameter number
+                case 2033: // No parameters exist in the statement
+                case 2032: // Data truncated
+                case 2031: // No data supplied for parameters in prepared statement
+                case 2030: // Statement not prepared
+                case 2023: // Error on SHOW SLAVE HOSTS
+                case 2022: // Error on SHOW SLAVE STATUS
+                    break;
+                // force a reconnection
+                case 1053: // Server shutdown in progress
+                case 1077: // %s: Normal shutdown
+                case 1040: // Too many connections
+                case 2055; // Lost connection to MySQL server at '%s', system error: %d
+                case 2013: // Lost connection to MySQL server during query
+                case 2006: // MySQL server has gone away
+                    if ($this->lastQueryReadonly)
+                    {
+                        // for some errors on a known readonly query/connection, we can retry on a different server
+                        $this->closeConnection();
+                        // bad server, mark as dead
+
+                        // retry
+                        return parent::query($sql, $bind);
+                    }
+                    break;
+                default:
+                    if ($lastError > 2000)
+                    {
+                        // bad server (from client message), mark as dead
+                    }
+                    break;
+            }
+
+            throw $e;
+        }
     }
 }
