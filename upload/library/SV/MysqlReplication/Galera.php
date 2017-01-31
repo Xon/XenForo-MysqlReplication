@@ -29,15 +29,14 @@ class SV_MysqlReplication_Multimaster extends SV_MysqlReplication_Masterslave
             //$masterId = apcu_fetch($this->prefix . '.galera.master' );
             if ($topology !== false)
             {
-                apcu_add($this->prefix . '.galera.check', 1, $this->discovery);
-                $doDiscovery = !apcu_exists($this->prefix . '.galera.check');
+                $doDiscovery = apcu_add($this->prefix . '.galera.check', 1, $this->discovery);
             }
         }
 
         $useTopology = true;
         if ($doDiscovery || $topology === false)
         {
-/* -- verify and test, want a short timeout on the assumption there is another node to use
+/* -- verify and test, want a short timeout (ON CONNECT) on the assumption there is another node to use
 ini_set('connect_timeout', $timeout);
 ini_set('default_socket_timeout', $timeout);
 ini_set('mysql.connect_timeout', $timeout);
