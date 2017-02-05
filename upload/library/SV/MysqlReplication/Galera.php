@@ -69,7 +69,7 @@ class SV_MysqlReplication_Multimaster extends SV_MysqlReplication_Masterslave
                 }
                 try
                 {
-                    $this->_connect();
+                    $this->_rawConnect();
                 }
                 catch(Zend_Db_Statement_Mysqli_Exception $e)
                 {
