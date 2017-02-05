@@ -155,6 +155,46 @@ class SV_MysqlReplication_Masterslave extends Zend_Db_Adapter_Mysqli
             }
         }
 
-        return parent::query($sql, $bind);
+        try
+        {
+            return parent::query($sql, $bind);
+        }
+        catch(Zend_Db_Adapter_Mysqli_Exception $e)
+        {
+            // IF this is a readonly connection AND caused by a list of known safe errors; try again once.
+            if ($this->readOnlyTransaction && $this->causedByLostConnection($e))
+            {
+                return parent::query($sql, $bind);
+            }
+            throw $e;
+        }
+    }
+
+    static $serverGoneAwayMessages = array(
+        'server has gone away',
+        'no connection to the server',
+        'Lost connection',
+        'is dead or not enabled',
+        'Error while sending',
+        'decryption failed or bad record mac',
+        'server closed the connection unexpectedly',
+        'SSL connection has been closed unexpectedly',
+        'Deadlock found when trying to get lock',
+        'Error writing data to the connection',
+        'Resource deadlock avoided',
+        'Query execution was interrupted',
+    );
+
+    protected function causedByLostConnection(Exception $e)
+    {
+        $message = utf8_strtolower($e->getMessage());
+        foreach(self::$serverGoneAwayMessages as $ErrorMessage)
+        {
+            if (utf8_strpos($message, $ErrorMessage) !== false)
+            {
+                return true;
+            }
+        }
+        return false;
     }
 }
