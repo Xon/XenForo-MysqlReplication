@@ -4,7 +4,7 @@ class SV_MysqlReplication_Masterslave extends Zend_Db_Adapter_Mysqli
 {
     protected $_usingMaster = false;
     protected $_connectedMaster = false;
-    protected $_connectedSlaveId = null;
+    protected $_connectedSlaveId = false;
     protected $readOnlyTransaction = false;
 
     protected $_master_config = null;
@@ -54,7 +54,7 @@ class SV_MysqlReplication_Masterslave extends Zend_Db_Adapter_Mysqli
 
     protected function _connectMasterSetup()
     {
-        $this->_connectedSlaveId = null;
+        $this->_connectedSlaveId = false;
         $this->_config = $this->_master_config;
         $this->_connectedMaster = true;
         $this->closeConnection();
@@ -83,14 +83,19 @@ class SV_MysqlReplication_Masterslave extends Zend_Db_Adapter_Mysqli
         return true;
     }
 
+    protected function _rawConnect()
+    {
+        parent::_connect();
+    }
+
     protected function _connect()
     {
-        if ($this->_usingMaster && ($this->_connectedMaster !== null  || $this->_connection == null))
+        if ($this->_usingMaster && ($this->_connectedMaster === false  || $this->_connection === null))
         {
             $newConnection = $this->_connectMasterSetup();
             $writable = true;
         }
-        else if (!$this->_usingMaster && ($this->_connectedSlaveId !== null || $this->_connection == null))
+        else if (!$this->_usingMaster && ($this->_connectedSlaveId === false || $this->_connection === null))
         {
             $newConnection = $this->_connectSlaveSetup();
             $writable = false;
@@ -100,8 +105,12 @@ class SV_MysqlReplication_Masterslave extends Zend_Db_Adapter_Mysqli
             $newConnection = false;
             $writable = false;
         }
+        if ($this->_connection) {
+            return;
+        }
+
         parent::_connect();
-        if ($newConnection)
+        if ($this->_connection && $newConnection)
         {
             $this->postConnect($writable);
         }
@@ -113,7 +122,7 @@ class SV_MysqlReplication_Masterslave extends Zend_Db_Adapter_Mysqli
         {
             $this->_connection->query("SET @@session.sql_mode='STRICT_ALL_TABLES'");
         }
-        if (!$writable && $this->_connectedSlaveId)
+        if (!$writable && $this->_connectedSlaveId !== false)
         {
             // use a readonly transaction to ensure writes fail against the slave
             $this->_connection->query("START TRANSACTION READ ONLY");
@@ -175,14 +184,14 @@ class SV_MysqlReplication_Masterslave extends Zend_Db_Adapter_Mysqli
         'no connection to the server',
         'Lost connection',
         'is dead or not enabled',
-        'Error while sending',
+        'error while sending',
         'decryption failed or bad record mac',
         'server closed the connection unexpectedly',
-        'SSL connection has been closed unexpectedly',
-        'Deadlock found when trying to get lock',
-        'Error writing data to the connection',
-        'Resource deadlock avoided',
-        'Query execution was interrupted',
+        'ssl connection has been closed unexpectedly',
+        'deadlock found when trying to get lock',
+        'error writing data to the connection',
+        'resource deadlock avoided',
+        'query execution was interrupted',
     );
 
     protected function causedByLostConnection(Exception $e)
