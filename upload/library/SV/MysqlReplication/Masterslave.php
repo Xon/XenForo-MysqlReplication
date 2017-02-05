@@ -5,6 +5,7 @@ class SV_MysqlReplication_Masterslave extends Zend_Db_Adapter_Mysqli
     protected $_usingMaster = false;
     protected $_connectedMaster = false;
     protected $_connectedSlaveId = null;
+    protected $readOnlyTransaction = false;
 
     protected $_master_config = null;
     protected $_slave_config = null;
@@ -42,6 +43,15 @@ class SV_MysqlReplication_Masterslave extends Zend_Db_Adapter_Mysqli
         parent::beginTransaction();
     }
 
+    public function closeConnection()
+    {
+        if ($this->isConnected() && $this->readOnlyTransaction) {
+            $this->readOnlyTransaction = false;
+            $this->_connection->query("COMMIT");
+        }
+        parent::closeConnection();
+    }
+
     protected function _connectMasterSetup()
     {
         $this->_connectedSlaveId = null;
@@ -75,12 +85,12 @@ class SV_MysqlReplication_Masterslave extends Zend_Db_Adapter_Mysqli
 
     protected function _connect()
     {
-        if ($this->_usingMaster && (!$this->_connectedMaster || $this->_connection == null))
+        if ($this->_usingMaster && ($this->_connectedMaster !== null  || $this->_connection == null))
         {
             $newConnection = $this->_connectMasterSetup();
             $writable = true;
         }
-        else if (!$this->_usingMaster && ($this->_connectedMaster || $this->_connection == null))
+        else if (!$this->_usingMaster && ($this->_connectedSlaveId !== null || $this->_connection == null))
         {
             $newConnection = $this->_connectSlaveSetup();
             $writable = false;
@@ -102,6 +112,12 @@ class SV_MysqlReplication_Masterslave extends Zend_Db_Adapter_Mysqli
         if ($this->_setStrictMode)
         {
             $this->_connection->query("SET @@session.sql_mode='STRICT_ALL_TABLES'");
+        }
+        if (!$writable && $this->_connectedSlaveId)
+        {
+            // use a readonly transaction to ensure writes fail against the slave
+            $this->_connection->query("START TRANSACTION READ ONLY");
+            $this->readOnlyTransaction = true;
         }
     }
 
