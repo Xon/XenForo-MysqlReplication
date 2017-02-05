@@ -134,7 +134,7 @@ class SV_MysqlReplication_Masterslave extends Zend_Db_Adapter_Mysqli
 
     public function checkForWrites($sql, $bind)
     {
-        if (stripos($sql,'select') === 0 && stripos($sql, 'for update') === false || stripos($sql,'explain') === 0)
+        if (stripos($sql,'select') === 0 && stripos($sql, 'for update') === false && stripos($sql, 'is_used_lock') === false && stripos($sql, 'get_lock') === false  || stripos($sql,'explain') === 0)
         {
             return false;
         }
