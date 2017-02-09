@@ -8,6 +8,8 @@ Note; any attributes* not in the slave config are pulled form the master config.
 
 *(host,port,username,password,dbname)
 
+Note; the addon XML file allows the 
+
 ## Master-Slave
 The foundation for establishing multiple connections and switching from the slave to the master when rewrited on a write.
 
@@ -52,7 +54,8 @@ $config['db']['dbname'] = 'db';
 $config['db']['adapter'] = 'Masterslave'; // or Multimaster/Galera
 $config['db']['adapterNamespace'] = 'SV_MysqlReplication';
 $config['db']['strictMode'] = true; // ensures strictmode is set on each connection, set to false if this has been configured in the database itself
-$config['db']['master']['initialTransactionlevel'] = 'READ COMMITTED'; // if set, use this transaction isolation level on the master
+$config['db']['public_max_statement_time'] = 3; // SQL timeout (in seconds for MariaDb) to apply to public (ie not admin) pages
+$config['db']['master']['initialTransactionlevel'] = 'READ COMMITTED';// if set, use this transaction isolation level on the master
 $config['db']['master']['transactionTransactionlevel'] = 'REPEATABLE READ'; // if set, use this transaction isolation level on the master and starting a transaction
 $config['db']['slaves'] = array(
 /*

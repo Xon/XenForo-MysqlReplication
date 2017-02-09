@@ -6,6 +6,8 @@ class SV_MysqlReplication_Masterslave extends Zend_Db_Adapter_Mysqli
     protected $_connectedMaster = false;
     protected $_connectedSlaveId = false;
     protected $readOnlyTransaction = false;
+    protected $_max_statement_time = null;
+    protected $_setTransactionLevel = false;
 
     protected $_master_config = null;
     protected $_slave_config = null;
@@ -23,8 +25,8 @@ class SV_MysqlReplication_Masterslave extends Zend_Db_Adapter_Mysqli
         $this->_slave_config = empty($xfconfig->db->slaves) ? array() : $xfconfig->db->slaves->toArray();
         if (!empty($xfconfig->db->master))
         {
-            $this->_initialTransactionlevel = empty($xfconfig->db->master->_initialTransactionlevel) ? null : $xfconfig->db->master->_initialTransactionlevel;
-            $this->_transactionTransactionlevel   = empty($xfconfig->db->master->_transactionTransactionlevel) ? null : $xfconfig->db->master->_transactionTransactionlevel;
+            $this->_initialTransactionlevel = empty($xfconfig->db->master->initialTransactionlevel) ? null : $xfconfig->db->master->initialTransactionlevel;
+            $this->_transactionTransactionlevel = empty($xfconfig->db->master->transactionTransactionlevel) ? null : $xfconfig->db->master->transactionTransactionlevel;
         }
         $this->_usingMaster = empty($this->_slave_config);
         foreach($this->_slave_config as &$slave)
@@ -47,20 +49,21 @@ class SV_MysqlReplication_Masterslave extends Zend_Db_Adapter_Mysqli
     public function beginTransaction()
     {
         $this->_usingMaster = true;
-        if ($this->_transactionTransactionlevel)
+        if ($this->_transactionTransactionlevel && !$this->_setTransactionLevel)
         {
+            $this->_setTransactionLevel = true;
             if (!$this->_connectedMaster)
             {
                 $this->_connect();
             }
-            $this->_connection->query("SET SESSION TRANSACTION". $this->_transactionTransactionlevel);
-            $this->_transactionTransactionlevel = null;
+            $this->_connection->query("SET SESSION TRANSACTION ISOLATION LEVEL ". $this->_transactionTransactionlevel);
         }
         parent::beginTransaction();
     }
 
     public function closeConnection()
     {
+        $this->_setTransactionLevel = false;
         if ($this->isConnected() && $this->readOnlyTransaction) {
             $this->readOnlyTransaction = false;
             $this->_connection->query("COMMIT");
@@ -132,22 +135,34 @@ class SV_MysqlReplication_Masterslave extends Zend_Db_Adapter_Mysqli
         }
     }
 
+    public function setStatementTimeout($timeout)
+    {
+        $this->_max_statement_time = strval(floatval($timeout)) + 0;
+        if ($this->_connection)
+        {
+            $this->_connection->query("SET @@session.max_statement_time=". $this->_max_statement_time);
+        }
+    }
+
     public function postConnect($writable)
     {
+        if ($this->_max_statement_time)
+        {
+            $this->_connection->query("SET @@session.max_statement_time=". $this->_max_statement_time);
+        }
         if ($this->_setStrictMode)
         {
             $this->_connection->query("SET @@session.sql_mode='STRICT_ALL_TABLES'");
+        }
+        if ($this->_initialTransactionlevel)
+        {
+            $this->query("SET SESSION TRANSACTION ISOLATION LEVEL ". $this->_initialTransactionlevel);
         }
         if (!$writable && $this->_connectedSlaveId !== false)
         {
             // use a readonly transaction to ensure writes fail against the slave
             $this->_connection->query("START TRANSACTION READ ONLY");
             $this->readOnlyTransaction = true;
-        }
-        else if ($writable && $this->_initialTransactionlevel)
-        {
-            $this->_connection->query("SET SESSION TRANSACTION". $this->_initialTransactionlevel);
-            $this->_initialTransactionlevel = null;
         }
     }
 
