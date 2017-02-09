@@ -11,6 +11,8 @@ class SV_MysqlReplication_Masterslave extends Zend_Db_Adapter_Mysqli
     protected $_slave_config = null;
     protected $_setStrictMode = true;
     protected $_attributesToCopy = array('host', 'port', 'username', 'password', 'dbname', 'charset');
+    protected $_initialTransactionlevel = null;
+    protected $_transactionTransactionlevel = null;
 
     public function __construct($config)
     {
@@ -19,6 +21,11 @@ class SV_MysqlReplication_Masterslave extends Zend_Db_Adapter_Mysqli
         $xfconfig = XenForo_Application::getConfig();
         $this->_setStrictMode = isset($xfconfig->db->strictMode) ? true : (boolean)$xfconfig->db->strictMode;
         $this->_slave_config = empty($xfconfig->db->slaves) ? array() : $xfconfig->db->slaves->toArray();
+        if (!empty($xfconfig->db->master))
+        {
+            $this->_initialTransactionlevel = empty($xfconfig->db->master->_initialTransactionlevel) ? null : $xfconfig->db->master->_initialTransactionlevel;
+            $this->_transactionTransactionlevel   = empty($xfconfig->db->master->_transactionTransactionlevel) ? null : $xfconfig->db->master->_transactionTransactionlevel;
+        }
         $this->_usingMaster = empty($this->_slave_config);
         foreach($this->_slave_config as &$slave)
         {
@@ -40,6 +47,15 @@ class SV_MysqlReplication_Masterslave extends Zend_Db_Adapter_Mysqli
     public function beginTransaction()
     {
         $this->_usingMaster = true;
+        if ($this->_transactionTransactionlevel)
+        {
+            if (!$this->_connectedMaster)
+            {
+                $this->_connect();
+            }
+            $this->_connection->query("SET SESSION TRANSACTION". $this->_transactionTransactionlevel);
+            $this->_transactionTransactionlevel = null;
+        }
         parent::beginTransaction();
     }
 
@@ -127,6 +143,11 @@ class SV_MysqlReplication_Masterslave extends Zend_Db_Adapter_Mysqli
             // use a readonly transaction to ensure writes fail against the slave
             $this->_connection->query("START TRANSACTION READ ONLY");
             $this->readOnlyTransaction = true;
+        }
+        else if ($writable && $this->_initialTransactionlevel)
+        {
+            $this->_connection->query("SET SESSION TRANSACTION". $this->_initialTransactionlevel);
+            $this->_initialTransactionlevel = null;
         }
     }
 

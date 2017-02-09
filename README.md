@@ -52,6 +52,8 @@ $config['db']['dbname'] = 'db';
 $config['db']['adapter'] = 'Masterslave'; // or Multimaster/Galera
 $config['db']['adapterNamespace'] = 'SV_MysqlReplication';
 $config['db']['strictMode'] = true; // ensures strictmode is set on each connection, set to false if this has been configured in the database itself
+$config['db']['master']['initialTransactionlevel'] = 'READ COMMITTED'; // if set, use this transaction isolation level on the master
+$config['db']['master']['transactionTransactionlevel'] = 'REPEATABLE READ'; // if set, use this transaction isolation level on the master and starting a transaction
 $config['db']['slaves'] = array(
 /*
     array(
