@@ -205,14 +205,14 @@ class SV_MysqlReplication_Masterslave extends Zend_Db_Adapter_Mysqli
                 {
                     $bind = $sql->getBind();
                 }
-                $sql_string = ltrim($sql->assemble());
+                $sql = ltrim($sql->assemble());
             }
             else
             {
-                $sql_string = ltrim($sql);
+                $sql = ltrim($sql);
             }
 
-            if ($this->checkForWrites($sql_string, $bind))
+            if ($this->checkForWrites($sql, $bind))
             {
                 $this->_usingMaster = true;
                 $this->_connect();
