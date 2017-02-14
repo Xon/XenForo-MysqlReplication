@@ -29,7 +29,7 @@ class SV_MysqlReplication_Masterslave extends Zend_Db_Adapter_Mysqli
         parent::__construct($config);
         $this->_master_config = $config;
         $xfconfig = XenForo_Application::getConfig();
-        $this->_setStrictMode = isset($xfconfig->db->strictMode) ? true : (boolean)$xfconfig->db->strictMode;
+        $this->_setStrictMode = isset($xfconfig->db->strictMode) ? (boolean)$xfconfig->db->strictMode : true;
         $this->_slave_config = empty($xfconfig->db->slaves) ? array() : $xfconfig->db->slaves->toArray();
         if (!empty($xfconfig->db->master))
         {
