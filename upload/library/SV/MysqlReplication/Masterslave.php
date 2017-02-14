@@ -156,7 +156,7 @@ class SV_MysqlReplication_Masterslave extends Zend_Db_Adapter_Mysqli
         }
         if ($this->_initialTransactionlevel)
         {
-            $this->query("SET SESSION TRANSACTION ISOLATION LEVEL ". $this->_initialTransactionlevel);
+            $this->_connection->query("SET SESSION TRANSACTION ISOLATION LEVEL ". $this->_initialTransactionlevel);
         }
         if (!$writable && $this->_connectedSlaveId !== false)
         {
