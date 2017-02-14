@@ -18,6 +18,14 @@ class SV_MysqlReplication_Masterslave extends Zend_Db_Adapter_Mysqli
 
     public function __construct($config)
     {
+        $xfconfig = XenForo_Application::getConfig();
+        $charset = isset($xfconfig->db->charset) ? $xfconfig->db->charset : null;
+        if ($charset !== null)
+        {
+            // XenForo forces the charset to utf8, allow it to be overrided
+            $config['chareset'] = $charset;
+        }
+
         parent::__construct($config);
         $this->_master_config = $config;
         $xfconfig = XenForo_Application::getConfig();
