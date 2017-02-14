@@ -185,6 +185,16 @@ class SV_MysqlReplication_Masterslave extends Zend_Db_Adapter_Mysqli
         return true;
     }
 
+    protected function _masterQuery($sql, $bind = array())
+    {
+        return parent::query($sql, $bind);
+    }
+
+    protected function _slaveQuery($slaveId, $sql, $bind = array())
+    {
+        return parent::query($sql, $bind);
+    }
+
     public function query($sql, $bind = array())
     {
         if (!$this->_usingMaster && !$this->_skipMasterCheck)
@@ -205,19 +215,24 @@ class SV_MysqlReplication_Masterslave extends Zend_Db_Adapter_Mysqli
             if ($this->checkForWrites($sql_string, $bind))
             {
                 $this->_usingMaster = true;
+                $this->_connect();
             }
+        }
+        if ($this->_connection === null)
+        {
+            $this->_connect();
         }
 
         try
         {
-            return parent::query($sql, $bind);
+            return $this->_usingMaster ? $this->_masterQuery($sql, $bind) : $this->_slaveQuery($this->_connectedSlaveId, $sql, $bind);
         }
         catch(Zend_Db_Adapter_Mysqli_Exception $e)
         {
             // IF this is a readonly connection AND caused by a list of known safe errors; try again once.
             if ($this->readOnlyTransaction && $this->causedByLostConnection($e))
             {
-                return parent::query($sql, $bind);
+                return $this->_usingMaster ? $this->_masterQuery($sql, $bind) : $this->_slaveQuery($this->_connectedSlaveId, $sql, $bind);
             }
             throw $e;
         }
