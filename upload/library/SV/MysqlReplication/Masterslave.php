@@ -218,6 +218,10 @@ class SV_MysqlReplication_Masterslave extends Zend_Db_Adapter_Mysqli
                 $this->_connect();
             }
         }
+        else if (is_string($sql))
+        {
+            $sql = ltrim($sql);
+        }
         if ($this->_connection === null)
         {
             $this->_connect();
