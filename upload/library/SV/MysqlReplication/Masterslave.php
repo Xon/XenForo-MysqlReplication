@@ -6,7 +6,6 @@ class SV_MysqlReplication_Masterslave extends Zend_Db_Adapter_Mysqli
     protected $_connectedMaster = false;
     protected $_connectedSlaveId = false;
     protected $readOnlyTransaction = false;
-    protected $_max_statement_time = null;
     protected $_setTransactionLevel = false;
 
     protected $_master_config = null;
@@ -143,21 +142,8 @@ class SV_MysqlReplication_Masterslave extends Zend_Db_Adapter_Mysqli
         }
     }
 
-    public function setStatementTimeout($timeout)
-    {
-        $this->_max_statement_time = strval(floatval($timeout)) + 0;
-        if ($this->_connection)
-        {
-            $this->_connection->query("SET @@session.max_statement_time=". $this->_max_statement_time);
-        }
-    }
-
     public function postConnect($writable)
     {
-        if ($this->_max_statement_time)
-        {
-            $this->_connection->query("SET @@session.max_statement_time=". $this->_max_statement_time);
-        }
         if ($this->_setStrictMode)
         {
             $this->_connection->query("SET @@session.sql_mode='STRICT_ALL_TABLES'");
