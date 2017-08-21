@@ -11,6 +11,8 @@ Note; any attributes* not in the slave config are pulled form the master config.
 ## Master-Slave
 The foundation for establishing multiple connections and switching from the slave to the master when rewrited on a write.
 
+A Slave connection is wrapped in a read-only transaction to guard against unexpected writes.
+
 ### Config:
 - ```$config['db']['adapter'] = 'Masterslave';```
 
