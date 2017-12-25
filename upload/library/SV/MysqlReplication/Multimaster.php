@@ -2,6 +2,12 @@
 
 class SV_MysqlReplication_Multimaster extends SV_MysqlReplication_Masterslave
 {
+    /**
+     * @param string $sql
+     * @param array  $bind
+     * @return bool
+     * @throws Zend_Db_Adapter_Mysqli_Exception
+     */
     public function checkForWrites($sql, $bind)
     {
         if (!parent::checkForWrites($sql, $bind))

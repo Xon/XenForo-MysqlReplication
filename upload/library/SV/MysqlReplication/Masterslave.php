@@ -2,23 +2,40 @@
 
 class SV_MysqlReplication_Masterslave extends Zend_Db_Adapter_Mysqli
 {
-    protected $_usingMaster = false;
-    protected $_connectedMaster = false;
-    protected $_connectedSlaveId = false;
-    protected $readOnlyTransaction = false;
+    /** @var bool */
+    protected $_usingMaster         = false;
+    /** @var bool */
+    protected $_connectedMaster     = false;
+    /** @var bool */
+    protected $_connectedSlaveId    = false;
+    /** @var bool */
+    protected $readOnlyTransaction  = false;
+    /** @var bool */
     protected $_setTransactionLevel = false;
 
-    protected $_master_config = null;
-    protected $_slave_config = null;
-    protected $_setStrictMode = true;
-    protected $_attributesToCopy = array('host', 'port', 'username', 'password', 'dbname', 'charset');
-    protected $_initialTransactionlevel = null;
+    /** @var array|null */
+    protected $_master_config               = null;
+    /** @var array|null */
+    protected $_slave_config                = null;
+    /** @var bool */
+    protected $_setStrictMode               = true;
+    /** @var string[] */
+    protected $_attributesToCopy            = ['host', 'port', 'username', 'password', 'dbname', 'charset'];
+    /** @var string|null */
+    protected $_initialTransactionlevel     = null;
+    /** @var string|null */
     protected $_transactionTransactionlevel = null;
 
+    /**
+     * SV_MysqlReplication_Masterslave constructor.
+     *
+     * @param $config
+     * @throws Zend_Db_Adapter_Exception
+     */
     public function __construct($config)
     {
-        $xfconfig = XenForo_Application::getConfig();
-        $charset = isset($xfconfig->db->charset) ? $xfconfig->db->charset : null;
+        $xfConfig = XenForo_Application::getConfig();
+        $charset = isset($xfConfig->db->charset) ? $xfConfig->db->charset : null;
         if ($charset !== null)
         {
             // XenForo forces the charset to utf8, allow it to be overrided
@@ -27,24 +44,27 @@ class SV_MysqlReplication_Masterslave extends Zend_Db_Adapter_Mysqli
 
         parent::__construct($config);
         $this->_master_config = $config;
-        $xfconfig = XenForo_Application::getConfig();
-        $this->_setStrictMode = isset($xfconfig->db->strictMode) ? (boolean)$xfconfig->db->strictMode : true;
-        $this->_slave_config = empty($xfconfig->db->slaves) ? array() : $xfconfig->db->slaves->toArray();
-        if (!empty($xfconfig->db->master))
+        $this->_setStrictMode = isset($xfConfig->db->strictMode) ? (boolean)$xfConfig->db->strictMode : true;
+        $this->_slave_config = empty($xfConfig->db->slaves) ? [] : $xfConfig->db->slaves->toArray();
+        if (!empty($xfConfig->db->master))
         {
-            $this->_initialTransactionlevel = empty($xfconfig->db->master->initialTransactionlevel) ? null : $xfconfig->db->master->initialTransactionlevel;
-            $this->_transactionTransactionlevel = empty($xfconfig->db->master->transactionTransactionlevel) ? null : $xfconfig->db->master->transactionTransactionlevel;
+            $this->_initialTransactionlevel = empty($xfConfig->db->master->initialTransactionlevel) ? null : $xfConfig->db->master->initialTransactionlevel;
+            $this->_transactionTransactionlevel = empty($xfConfig->db->master->transactionTransactionlevel) ? null : $xfConfig->db->master->transactionTransactionlevel;
         }
         $this->_usingMaster = empty($this->_slave_config);
-        foreach($this->_slave_config as &$slave)
+        foreach ($this->_slave_config as &$slave)
         {
             $this->copyAttributes($slave, $this->_master_config);
         }
     }
 
+    /**
+     * @param array $slave
+     * @param array $master
+     */
     public function copyAttributes(array &$slave, array $master)
     {
-        foreach($this->_attributesToCopy as $attribute)
+        foreach ($this->_attributesToCopy as $attribute)
         {
             if (!isset($slave[$attribute]) && isset($master[$attribute]))
             {
@@ -53,6 +73,10 @@ class SV_MysqlReplication_Masterslave extends Zend_Db_Adapter_Mysqli
         }
     }
 
+    /**
+     * @return Zend_Db_Adapter_Abstract
+     * @throws Zend_Db_Adapter_Mysqli_Exception
+     */
     public function beginTransaction()
     {
         $this->_usingMaster = true;
@@ -63,21 +87,25 @@ class SV_MysqlReplication_Masterslave extends Zend_Db_Adapter_Mysqli
             {
                 $this->_connect();
             }
-            $this->_connection->query("SET SESSION TRANSACTION ISOLATION LEVEL ". $this->_transactionTransactionlevel);
+            $this->_connection->query("SET SESSION TRANSACTION ISOLATION LEVEL " . $this->_transactionTransactionlevel);
         }
-        parent::beginTransaction();
+        return parent::beginTransaction();
     }
 
     public function closeConnection()
     {
         $this->_setTransactionLevel = false;
-        if ($this->isConnected() && $this->readOnlyTransaction) {
+        if ($this->isConnected() && $this->readOnlyTransaction)
+        {
             $this->readOnlyTransaction = false;
             $this->_connection->query("COMMIT");
         }
         parent::closeConnection();
     }
 
+    /**
+     * @return bool
+     */
     protected function _connectMasterSetup()
     {
         $this->_connectedSlaveId = false;
@@ -88,12 +116,16 @@ class SV_MysqlReplication_Masterslave extends Zend_Db_Adapter_Mysqli
         return true;
     }
 
+    /**
+     * @param int|null $slaveId
+     * @return bool
+     */
     protected function _connectSlaveSetup($slaveId = null)
     {
         if ($slaveId === null)
         {
             $count = count($this->_slave_config);
-            $slaveId =($count > 1) ? mt_rand(0,$count-1) : 0;
+            $slaveId = ($count > 1) ? mt_rand(0, $count - 1) : 0;
         }
         if ($slaveId === $this->_connectedSlaveId)
         {
@@ -109,14 +141,20 @@ class SV_MysqlReplication_Masterslave extends Zend_Db_Adapter_Mysqli
         return true;
     }
 
+    /**
+     * @throws Zend_Db_Adapter_Mysqli_Exception
+     */
     protected function _rawConnect()
     {
         parent::_connect();
     }
 
+    /**
+     * @throws Zend_Db_Adapter_Mysqli_Exception
+     */
     protected function _connect()
     {
-        if ($this->_usingMaster && ($this->_connectedMaster === false  || $this->_connection === null))
+        if ($this->_usingMaster && ($this->_connectedMaster === false || $this->_connection === null))
         {
             $newConnection = $this->_connectMasterSetup();
             $writable = true;
@@ -131,7 +169,8 @@ class SV_MysqlReplication_Masterslave extends Zend_Db_Adapter_Mysqli
             $newConnection = false;
             $writable = false;
         }
-        if ($this->_connection) {
+        if ($this->_connection)
+        {
             return;
         }
 
@@ -142,6 +181,9 @@ class SV_MysqlReplication_Masterslave extends Zend_Db_Adapter_Mysqli
         }
     }
 
+    /**
+     * @param bool $writable
+     */
     public function postConnect($writable)
     {
         if ($this->_setStrictMode)
@@ -150,7 +192,7 @@ class SV_MysqlReplication_Masterslave extends Zend_Db_Adapter_Mysqli
         }
         if ($this->_initialTransactionlevel)
         {
-            $this->_connection->query("SET SESSION TRANSACTION ISOLATION LEVEL ". $this->_initialTransactionlevel);
+            $this->_connection->query("SET SESSION TRANSACTION ISOLATION LEVEL " . $this->_initialTransactionlevel);
         }
         if (!$writable && $this->_connectedSlaveId !== false)
         {
@@ -160,28 +202,52 @@ class SV_MysqlReplication_Masterslave extends Zend_Db_Adapter_Mysqli
         }
     }
 
+    /** @var bool */
     protected $_skipMasterCheck = false;
 
+    /**
+     * @param string $sql
+     * @param array $bind
+     * @return bool
+     */
     public function checkForWrites($sql, $bind)
     {
-        if (stripos($sql,'select') === 0 && stripos($sql, 'for update') === false && stripos($sql, 'is_used_lock') === false && stripos($sql, 'get_lock') === false  || stripos($sql,'explain') === 0)
+        if (stripos($sql, 'select') === 0 && stripos($sql, 'for update') === false && stripos($sql, 'is_used_lock') === false && stripos($sql, 'get_lock') === false || stripos($sql, 'explain') === 0)
         {
             return false;
         }
+
         return true;
     }
 
-    protected function _masterQuery($sql, $bind = array())
+    /**
+     * @param string|Zend_Db_Select $sql
+     * @param array                 $bind
+     * @return Zend_Db_Statement_Interface
+     */
+    protected function _masterQuery($sql, $bind = [])
     {
         return parent::query($sql, $bind);
     }
 
-    protected function _slaveQuery($slaveId, $sql, $bind = array())
+    /**
+     * @param int                   $slaveId
+     * @param string|Zend_Db_Select $sql
+     * @param array                 $bind
+     * @return Zend_Db_Statement_Interface
+     */
+    protected function _slaveQuery($slaveId, $sql, $bind = [])
     {
         return parent::query($sql, $bind);
     }
 
-    public function query($sql, $bind = array())
+    /**
+     * @param string|Zend_Db_Select $sql
+     * @param array $bind
+     * @return Zend_Db_Statement_Interface
+     * @throws Zend_Db_Adapter_Mysqli_Exception
+     */
+    public function query($sql, $bind = [])
     {
         if (!$this->_usingMaster && !$this->_skipMasterCheck)
         {
@@ -217,7 +283,7 @@ class SV_MysqlReplication_Masterslave extends Zend_Db_Adapter_Mysqli
         {
             return $this->_usingMaster ? $this->_masterQuery($sql, $bind) : $this->_slaveQuery($this->_connectedSlaveId, $sql, $bind);
         }
-        catch(Zend_Db_Adapter_Mysqli_Exception $e)
+        catch (Zend_Db_Adapter_Mysqli_Exception $e)
         {
             // IF this is a readonly connection AND caused by a list of known safe errors; try again once.
             if ($this->readOnlyTransaction && $this->causedByLostConnection($e))
@@ -228,7 +294,8 @@ class SV_MysqlReplication_Masterslave extends Zend_Db_Adapter_Mysqli
         }
     }
 
-    static $serverGoneAwayMessages = array(
+    /** @var string[] */
+    static $serverGoneAwayMessages = [
         'server has gone away',
         'no connection to the server',
         'Lost connection',
@@ -241,18 +308,23 @@ class SV_MysqlReplication_Masterslave extends Zend_Db_Adapter_Mysqli
         'error writing data to the connection',
         'resource deadlock avoided',
         'query execution was interrupted',
-    );
+    ];
 
+    /**
+     * @param Exception $e
+     * @return bool
+     */
     protected function causedByLostConnection(Exception $e)
     {
         $message = utf8_strtolower($e->getMessage());
-        foreach(self::$serverGoneAwayMessages as $ErrorMessage)
+        foreach (self::$serverGoneAwayMessages as $ErrorMessage)
         {
             if (utf8_strpos($message, $ErrorMessage) !== false)
             {
                 return true;
             }
         }
+
         return false;
     }
 }
