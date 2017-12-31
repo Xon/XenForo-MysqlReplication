@@ -41,10 +41,12 @@ $config['db']['slaves'] = array(
     array(
         'host' => '127.0.0.1',
         'port' = '3307',
+        'replication_health_check' => true,
     ),
     array(
         'host' => '127.0.0.1',
         'port' => '3308',
+        'replication_health_check' => false,
     ),
 */    
 );

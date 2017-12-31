@@ -25,6 +25,8 @@ class SV_MysqlReplication_Masterslave extends Zend_Db_Adapter_Mysqli
     protected $_initialTransactionlevel     = null;
     /** @var string|null */
     protected $_transactionTransactionlevel = null;
+    /** @var int */
+    protected $_healthCheckTTL = 0;
 
     /**
      * SV_MysqlReplication_Masterslave constructor.
@@ -39,11 +41,12 @@ class SV_MysqlReplication_Masterslave extends Zend_Db_Adapter_Mysqli
         if ($charset !== null)
         {
             // XenForo forces the charset to utf8, allow it to be overrided
-            $config['chareset'] = $charset;
+            $config['charset'] = $charset;
         }
 
         parent::__construct($config);
         $this->_master_config = $config;
+        $this->_healthCheckTTL = isset($xfConfig->db->healthCheckTTL) ? (int)$xfConfig->db->healthCheckTTL : 0;
         $this->_setStrictMode = isset($xfConfig->db->strictMode) ? (boolean)$xfConfig->db->strictMode : true;
         $this->_slave_config = empty($xfConfig->db->slaves) ? [] : $xfConfig->db->slaves->toArray();
         if (!empty($xfConfig->db->master))
@@ -94,6 +97,8 @@ class SV_MysqlReplication_Masterslave extends Zend_Db_Adapter_Mysqli
 
     public function closeConnection()
     {
+        $this->_connectedMaster = false;
+        $this->_connectedSlaveId = false;
         $this->_setTransactionLevel = false;
         if ($this->isConnected() && $this->readOnlyTransaction)
         {
@@ -108,10 +113,8 @@ class SV_MysqlReplication_Masterslave extends Zend_Db_Adapter_Mysqli
      */
     protected function _connectMasterSetup()
     {
-        $this->_connectedSlaveId = false;
-        $this->_config = $this->_master_config;
-        $this->_connectedMaster = true;
         $this->closeConnection();
+        $this->_config = $this->_master_config;
 
         return true;
     }
@@ -122,6 +125,11 @@ class SV_MysqlReplication_Masterslave extends Zend_Db_Adapter_Mysqli
      */
     protected function _connectSlaveSetup($slaveId = null)
     {
+        // no slaves left, use the master
+        if (empty($this->_slave_config))
+        {
+            return $this->_connectMasterSetup();
+        }
         if ($slaveId === null)
         {
             $count = count($this->_slave_config);
@@ -132,11 +140,10 @@ class SV_MysqlReplication_Masterslave extends Zend_Db_Adapter_Mysqli
             return false;
         }
 
+        $this->closeConnection();
         $this->_connectedSlaveId = $slaveId;
         $this->_config = $this->_slave_config[$this->_connectedSlaveId];
 
-        $this->_connectedMaster = false;
-        $this->closeConnection();
 
         return true;
     }
@@ -177,8 +184,143 @@ class SV_MysqlReplication_Masterslave extends Zend_Db_Adapter_Mysqli
         parent::_connect();
         if ($this->_connection && $newConnection)
         {
+            while (!$this->doHealthCheck($writable))
+            {
+                if ($writable || empty($this->_slave_config))
+                {
+                    $writable = false;
+                    $this->_connectMasterSetup();
+                    parent::_connect();
+                }
+                else
+                {
+                    $this->_connectSlaveSetup();
+                    parent::_connect();
+                }
+            }
             $this->postConnect($writable);
         }
+    }
+
+    /**
+     * @param $writable
+     *
+     * @return bool
+     */
+    protected function _doHealthCheck($writable)
+    {
+        if ($writable)
+        {
+            return true;
+        }
+
+        /** @var \mysqli $connection */
+        $connection = $this->_connection;
+
+        $result = $connection->query("show slave status");
+        if ($result === false || $result === true)
+        {
+            // isn't a slave
+            return true;
+        }
+        /** @var \mysqli_result $result */
+        $row = $result->fetch_assoc();
+        if (isset($row['Seconds_Behind_Master']) && $row['Seconds_Behind_Master'] > 0)
+        {
+            // slave is behind, don't use it
+            return  false;
+        }
+        if (isset($row['Slave_IO_Running']) && $row['Slave_IO_Running'] !== 'Yes')
+        {
+            // slave is not running, don't use it
+            return  false;
+        }
+        if (isset($row['Slave_SQL_Running']) && $row['Slave_SQL_Running'] !== 'Yes')
+        {
+            // slave is not running, don't use it
+            return false;
+        }
+        return !empty($row);
+    }
+
+    protected function doHealthCheck($writable)
+    {
+        // do not allow the master/writable connection to be disabled
+        if ($writable)
+        {
+            return true;
+        }
+
+        if (empty($this->_config['replication_health_check']))
+        {
+            return true;
+        }
+
+        $credis = null;
+        $cache = null;
+        if ($this->_healthCheckTTL)
+        {
+            try
+            {
+                $cache = XenForo_Application::getCache();
+            }
+            catch (\Exception $e)
+            {
+            }
+        }
+        if ($cache)
+        {
+            /** @var Zend_Cache_Backend_Redis $backend */
+            $backend = $cache->getBackend();
+            $key = "{$this->_config['host']}_{$this->_config['port']}_{$this->_config['username']}_{$this->_config['dbname']}";
+            if (method_exists($backend, 'getCredis') && $credis = $backend->getCredis())
+            {
+                $key = Cm_Cache_Backend_Redis::PREFIX_KEY . $cache->getOption('cache_id_prefix') . 'db.health.' . $key;
+                $obj = $credis->get($key);
+            }
+            else
+            {
+                $obj = $cache->load($key);
+            }
+            if ($obj !== false)
+            {
+                $isValid = $obj ? true : false;
+                if (!$isValid && $this->_connectedSlaveId !== false)
+                {
+                    unset($this->_slave_config[$this->_connectedSlaveId]);
+                    $this->_slave_config = array_values($this->_slave_config);
+                    $this->closeConnection();
+                }
+                return $isValid;
+            }
+        }
+
+        $isValid = $this->_doHealthCheck($writable);
+
+        if (!$isValid && $this->_connectedSlaveId !== false)
+        {
+            unset($this->_slave_config[$this->_connectedSlaveId]);
+            $this->_slave_config = array_values($this->_slave_config);
+            $this->closeConnection();
+        }
+
+        if ($cache)
+        {
+            /** @var Zend_Cache_Backend_Redis $backend */
+            $backend = $cache->getBackend();
+            $key = "{$this->_config['host']}_{$this->_config['port']}_{$this->_config['username']}_{$this->_config['dbname']}";
+            if (method_exists($backend, 'getCredis') && $credis = $backend->getCredis())
+            {
+                $key = Cm_Cache_Backend_Redis::PREFIX_KEY . $cache->getOption('cache_id_prefix') . 'db.health.' . $key;
+                $credis->set($key, $isValid ? '1' : '', $this->_healthCheckTTL);
+            }
+            else
+            {
+                $cache->save($isValid ? '1' : '', $key, [], $this->_healthCheckTTL);
+            }
+        }
+
+        return $isValid;
     }
 
     /**
@@ -186,18 +328,21 @@ class SV_MysqlReplication_Masterslave extends Zend_Db_Adapter_Mysqli
      */
     public function postConnect($writable)
     {
+        /** @var \mysqli $connection */
+        $connection = $this->_connection;
+
         if ($this->_setStrictMode)
         {
-            $this->_connection->query("SET @@session.sql_mode='STRICT_ALL_TABLES'");
+            $connection->query("SET @@session.sql_mode='STRICT_ALL_TABLES'");
         }
         if ($this->_initialTransactionlevel)
         {
-            $this->_connection->query("SET SESSION TRANSACTION ISOLATION LEVEL " . $this->_initialTransactionlevel);
+            $connection->query("SET SESSION TRANSACTION ISOLATION LEVEL " . $this->_initialTransactionlevel);
         }
         if (!$writable && $this->_connectedSlaveId !== false)
         {
             // use a readonly transaction to ensure writes fail against the slave
-            $this->_connection->query("START TRANSACTION READ ONLY");
+            $connection->query("START TRANSACTION READ ONLY");
             $this->readOnlyTransaction = true;
         }
     }
