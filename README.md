@@ -13,6 +13,16 @@ The foundation for establishing multiple connections and switching from the slav
 
 A Slave connection is wrapped in a read-only transaction to guard against unexpected writes.
 
+### Slave status checking
+
+Configure with:
+```
+$config['db']['healthCheckTTL'] = 5;
+$config['db']['slaves'][0]['replication_health_check'] = true;
+```
+
+This requires the REPLICATION CLIENT permission!
+
 ### Config:
 - ```$config['db']['adapter'] = 'Masterslave';```
 
@@ -34,6 +44,7 @@ $config['db']['dbname'] = 'db';
 $config['db']['adapter'] = 'Masterslave'; // or Multimaster
 $config['db']['adapterNamespace'] = 'SV_MysqlReplication';
 $config['db']['strictMode'] = true; // ensures strictmode is set on each connection, set to false if this has been configured in the database itself
+$config['db']['healthCheckTTL'] = 5;
 $config['db']['master']['initialTransactionlevel'] = 'READ COMMITTED';// if set, use this transaction isolation level on the master
 $config['db']['master']['transactionTransactionlevel'] = 'REPEATABLE READ'; // if set, use this transaction isolation level on the master and starting a transaction
 $config['db']['slaves'] = array(
