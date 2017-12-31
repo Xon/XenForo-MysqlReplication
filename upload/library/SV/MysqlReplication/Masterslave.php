@@ -184,13 +184,15 @@ class SV_MysqlReplication_Masterslave extends Zend_Db_Adapter_Mysqli
         parent::_connect();
         if ($this->_connection && $newConnection)
         {
+            $this->_connectedMaster = $this->_usingMaster;
             while (!$this->doHealthCheck($writable))
             {
                 if ($writable || empty($this->_slave_config))
                 {
-                    $writable = false;
+                    $writable = true;
                     $this->_connectMasterSetup();
                     parent::_connect();
+                    $this->_connectedMaster = true;
                 }
                 else
                 {
