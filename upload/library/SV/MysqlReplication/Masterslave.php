@@ -233,6 +233,13 @@ class SV_MysqlReplication_Masterslave extends Zend_Db_Adapter_Mysqli
         $result = $connection->query("show slave status");
         if ($result === false || $result === true)
         {
+            if (!$result && $connection->errno === 1227)
+            {
+                // Access denied; you need (at least one of) the SUPER, REPLICATION CLIENT privilege(s) for this operation
+                // unknown if it is a slave or not, don't use it
+                return false;
+            }
+
             // isn't a slave
             return true;
         }
