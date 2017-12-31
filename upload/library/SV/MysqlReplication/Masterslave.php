@@ -256,7 +256,6 @@ class SV_MysqlReplication_Masterslave extends Zend_Db_Adapter_Mysqli
             return true;
         }
 
-        $credis = null;
         $cache = null;
         if ($this->_healthCheckTTL)
         {
@@ -268,15 +267,16 @@ class SV_MysqlReplication_Masterslave extends Zend_Db_Adapter_Mysqli
             {
             }
         }
+        $credis = null; $backend = null; $key = null; $redisKey = null;
         if ($cache)
         {
             /** @var Zend_Cache_Backend_Redis $backend */
             $backend = $cache->getBackend();
             $key = "{$this->_config['host']}_{$this->_config['port']}_{$this->_config['username']}_{$this->_config['dbname']}";
-            if (method_exists($backend, 'getCredis') && $credis = $backend->getCredis())
+            if (method_exists($backend, 'getCredis') && $credis = $backend->getCredis(true))
             {
-                $key = Cm_Cache_Backend_Redis::PREFIX_KEY . $cache->getOption('cache_id_prefix') . 'db.health.' . $key;
-                $obj = $credis->get($key);
+                $redisKey = Cm_Cache_Backend_Redis::PREFIX_KEY . $cache->getOption('cache_id_prefix') . 'db.health.' . $key;
+                $obj = $credis->get($redisKey);
             }
             else
             {
@@ -306,13 +306,9 @@ class SV_MysqlReplication_Masterslave extends Zend_Db_Adapter_Mysqli
 
         if ($cache)
         {
-            /** @var Zend_Cache_Backend_Redis $backend */
-            $backend = $cache->getBackend();
-            $key = "{$this->_config['host']}_{$this->_config['port']}_{$this->_config['username']}_{$this->_config['dbname']}";
             if (method_exists($backend, 'getCredis') && $credis = $backend->getCredis())
             {
-                $key = Cm_Cache_Backend_Redis::PREFIX_KEY . $cache->getOption('cache_id_prefix') . 'db.health.' . $key;
-                $credis->set($key, $isValid ? '1' : '', $this->_healthCheckTTL);
+                $credis->set($redisKey, $isValid ? '1' : '', $this->_healthCheckTTL);
             }
             else
             {
