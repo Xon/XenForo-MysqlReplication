@@ -156,9 +156,6 @@ class SV_MysqlReplication_Masterslave extends Zend_Db_Adapter_Mysqli
         parent::_connect();
     }
 
-    /**
-     * @throws Zend_Db_Adapter_Mysqli_Exception
-     */
     protected function _connect()
     {
         if ($this->_usingMaster && ($this->_connectedMaster === false || $this->_connection === null))
@@ -181,11 +178,25 @@ class SV_MysqlReplication_Masterslave extends Zend_Db_Adapter_Mysqli
             return;
         }
 
-        parent::_connect();
+        if (!$this->_tryConnect($e))
+        {
+            if ($this->_usingMaster)
+            {
+                throw $e;
+            }
+            else
+            {
+                // fall back to the master
+                $newConnection = $this->_connectMasterSetup();
+                $writable = true;
+                parent::_connect();
+            }
+        }
+
         if ($this->_connection && $newConnection)
         {
             $this->_connectedMaster = $this->_usingMaster;
-            while (!$this->doHealthCheck($writable))
+            while ($this->_connection === null || !$this->doHealthCheck($writable))
             {
                 if ($writable || empty($this->_slave_config))
                 {
@@ -197,7 +208,7 @@ class SV_MysqlReplication_Masterslave extends Zend_Db_Adapter_Mysqli
                 else
                 {
                     $this->_connectSlaveSetup();
-                    parent::_connect();
+                    $this->_tryConnect();
                 }
             }
             $this->postConnect($writable);
@@ -319,6 +330,62 @@ class SV_MysqlReplication_Masterslave extends Zend_Db_Adapter_Mysqli
         }
 
         return $isValid;
+    }
+
+    /**
+     * @param Exception|null $exception
+     * @return bool
+     */
+    protected function _tryConnect(Exception &$exception = null)
+    {
+        try
+        {
+            parent::_connect();
+        }
+        catch (Zend_Db_Adapter_Mysqli_Exception $e)
+        {
+            if ($e->getMessage() === 'Connection refused')
+            {
+                if ($this->_connectedSlaveId !== false)
+                {
+                    unset($this->_slave_config[$this->_connectedSlaveId]);
+                    $this->_slave_config = array_values($this->_slave_config);
+                    $this->closeConnection();
+                }
+
+                $cache = null;
+                if ($this->_healthCheckTTL)
+                {
+                    try
+                    {
+                        $cache = XenForo_Application::getCache();
+                    }
+                    catch (\Exception $e)
+                    {
+                    }
+                }
+                if ($cache)
+                {
+                    /** @var Zend_Cache_Backend_Redis $backend */
+                    $backend = $cache->getBackend();
+                    $key = "{$this->_config['host']}_{$this->_config['port']}_{$this->_config['username']}_{$this->_config['dbname']}";
+                    if (method_exists($backend, 'getCredis') && $credis = $backend->getCredis())
+                    {
+                        $redisKey = Cm_Cache_Backend_Redis::PREFIX_KEY . $cache->getOption('cache_id_prefix') . 'db.health.' . $key;
+                        $credis->set($redisKey, '', $this->_healthCheckTTL);
+                    }
+                    else
+                    {
+                        $cache->save('', $key, [], $this->_healthCheckTTL);
+                    }
+                }
+            }
+            $exception = $e;
+
+            return false;
+        }
+
+        return true;
     }
 
     /**
