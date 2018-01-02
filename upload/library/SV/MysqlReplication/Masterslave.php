@@ -276,6 +276,13 @@ class SV_MysqlReplication_Masterslave extends Zend_Db_Adapter_Mysqli
             return true;
         }
 
+        // if we can't connect, then auto-fail the node
+        if (!$this->isConnected())
+        {
+            $this->_setConnectionState(false);
+            return false;
+        }
+
         $cache = null;
         if ($this->_healthCheckTTL)
         {
@@ -305,36 +312,14 @@ class SV_MysqlReplication_Masterslave extends Zend_Db_Adapter_Mysqli
             if ($obj !== false)
             {
                 $isValid = $obj ? true : false;
-                if (!$isValid && $this->_connectedSlaveId !== false)
-                {
-                    unset($this->_slave_config[$this->_connectedSlaveId]);
-                    $this->_slave_config = array_values($this->_slave_config);
-                    $this->closeConnection();
-                }
+                $this->_updateSlaveConfig($isValid);
                 return $isValid;
             }
         }
 
         $isValid = $this->_doHealthCheck($writable);
 
-        if (!$isValid && $this->_connectedSlaveId !== false)
-        {
-            unset($this->_slave_config[$this->_connectedSlaveId]);
-            $this->_slave_config = array_values($this->_slave_config);
-            $this->closeConnection();
-        }
-
-        if ($cache)
-        {
-            if (method_exists($backend, 'getCredis') && $credis = $backend->getCredis())
-            {
-                $credis->set($redisKey, $isValid ? '1' : '', $this->_healthCheckTTL);
-            }
-            else
-            {
-                $cache->save($isValid ? '1' : '', $key, [], $this->_healthCheckTTL);
-            }
-        }
+        $this->_setConnectionState($isValid);
 
         return $isValid;
     }
@@ -351,41 +336,9 @@ class SV_MysqlReplication_Masterslave extends Zend_Db_Adapter_Mysqli
         }
         catch (Zend_Db_Adapter_Mysqli_Exception $e)
         {
-            if ($e->getMessage() === 'Connection refused')
+            if ($this->_connectedSlaveId !== false)
             {
-                if ($this->_connectedSlaveId !== false)
-                {
-                    unset($this->_slave_config[$this->_connectedSlaveId]);
-                    $this->_slave_config = array_values($this->_slave_config);
-                    $this->closeConnection();
-                }
-
-                $cache = null;
-                if ($this->_healthCheckTTL)
-                {
-                    try
-                    {
-                        $cache = XenForo_Application::getCache();
-                    }
-                    catch (\Exception $e)
-                    {
-                    }
-                }
-                if ($cache)
-                {
-                    /** @var Zend_Cache_Backend_Redis $backend */
-                    $backend = $cache->getBackend();
-                    $key = "{$this->_config['host']}_{$this->_config['port']}_{$this->_config['username']}_{$this->_config['dbname']}";
-                    if (method_exists($backend, 'getCredis') && $credis = $backend->getCredis())
-                    {
-                        $redisKey = Cm_Cache_Backend_Redis::PREFIX_KEY . $cache->getOption('cache_id_prefix') . 'db.health.' . $key;
-                        $credis->set($redisKey, '', $this->_healthCheckTTL);
-                    }
-                    else
-                    {
-                        $cache->save('', $key, [], $this->_healthCheckTTL);
-                    }
-                }
+                $this->_setConnectionState(false);
             }
             $exception = $e;
 
@@ -393,6 +346,54 @@ class SV_MysqlReplication_Masterslave extends Zend_Db_Adapter_Mysqli
         }
 
         return true;
+    }
+
+    /**
+     * @param bool $isValid
+     */
+    protected function _updateSlaveConfig($isValid)
+    {
+        if (!$isValid && $this->_connectedSlaveId !== false)
+        {
+            unset($this->_slave_config[$this->_connectedSlaveId]);
+            $this->_slave_config = array_values($this->_slave_config);
+            $this->closeConnection();
+        }
+    }
+
+    /**
+     * @param bool $isValid
+     */
+    protected function _setConnectionState($isValid)
+    {
+        $this->_updateSlaveConfig($isValid);
+
+        $cache = null;
+        if ($this->_healthCheckTTL)
+        {
+            try
+            {
+                $cache = XenForo_Application::getCache();
+            }
+            catch (\Exception $e)
+            {
+            }
+        }
+        if ($cache)
+        {
+            /** @var Zend_Cache_Backend_Redis $backend */
+            $backend = $cache->getBackend();
+            $key = "{$this->_config['host']}_{$this->_config['port']}_{$this->_config['username']}_{$this->_config['dbname']}";
+            if (method_exists($backend, 'getCredis') && $credis = $backend->getCredis())
+            {
+                $redisKey = Cm_Cache_Backend_Redis::PREFIX_KEY . $cache->getOption('cache_id_prefix') . 'db.health.' . $key;
+                $credis->set($redisKey, $isValid ? '1' : '', $this->_healthCheckTTL);
+            }
+            else
+            {
+                $cache->save($isValid ? '1' : '', $key, [], $this->_healthCheckTTL);
+            }
+        }
     }
 
     /**
