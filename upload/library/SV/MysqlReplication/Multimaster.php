@@ -1,5 +1,8 @@
 <?php
 
+/**
+ * Class SV_MysqlReplication_Multimaster
+ */
 class SV_MysqlReplication_Multimaster extends SV_MysqlReplication_Masterslave
 {
     /**
