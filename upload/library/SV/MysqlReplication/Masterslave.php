@@ -230,6 +230,52 @@ class SV_MysqlReplication_Masterslave extends Zend_Db_Adapter_Mysqli
     }
 
     /**
+     * List of file names that force to use master server instead of slave
+     *
+     * @var array
+     */
+    protected $_filesThatForceMaster = array(
+        'admin.php',
+        'deferred.php'
+    );
+
+    /**
+     * Checks if the current script requires going through master every time
+     *
+     * @param string $sql
+     * @param array $bind
+     *
+     * @return bool
+     */
+    public function checkIfFileForcesMaster(/** @noinspection PhpUnusedParameterInspection */$sql, $bind)
+    {
+        $xfConfig = XenForo_Application::getConfig();
+        $enableForcedUseMasterForSpecialFiles = false;
+        /** @noinspection PhpUndefinedFieldInspection */
+        if (!empty($xfConfig->db->force_use_master_for_special_files))
+        {
+            /** @noinspection PhpUndefinedFieldInspection */
+            $enableForcedUseMasterForSpecialFiles = (bool)$xfConfig->db->force_use_master_for_special_files;
+        }
+
+        if ($enableForcedUseMasterForSpecialFiles)
+        {
+            $currentFileName = $_SERVER['SCRIPT_FILENAME'];
+            $currentFileStrLen = utf8_strlen($currentFileName);
+
+            foreach ($this->_filesThatForceMaster AS $fileNameThatForceMaster)
+            {
+                if (utf8_substr($currentFileName, ($currentFileStrLen - utf8_strlen($fileNameThatForceMaster))) === $fileNameThatForceMaster)
+                {
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
+    /**
      * @param string|Zend_Db_Select $sql
      * @param array                 $bind
      * @return Zend_Db_Statement_Interface
@@ -273,7 +319,7 @@ class SV_MysqlReplication_Masterslave extends Zend_Db_Adapter_Mysqli
                 $sql = ltrim($sql);
             }
 
-            if ($this->checkForWrites($sql, $bind))
+            if ($this->checkForWrites($sql, $bind) || $this->checkIfFileForcesMaster($sql, $bind))
             {
                 $this->_usingMaster = true;
                 $this->_connect();
