@@ -1,5 +1,8 @@
 <?php
 
+/**
+ * Class SV_MysqlReplication_Masterslave
+ */
 class SV_MysqlReplication_Masterslave extends Zend_Db_Adapter_Mysqli
 {
     /** @var bool */
@@ -35,6 +38,7 @@ class SV_MysqlReplication_Masterslave extends Zend_Db_Adapter_Mysqli
     public function __construct($config)
     {
         $xfConfig = XenForo_Application::getConfig();
+        /** @noinspection PhpUndefinedFieldInspection */
         $charset = isset($xfConfig->db->charset) ? $xfConfig->db->charset : null;
         if ($charset !== null)
         {
@@ -44,11 +48,16 @@ class SV_MysqlReplication_Masterslave extends Zend_Db_Adapter_Mysqli
 
         parent::__construct($config);
         $this->_master_config = $config;
+        /** @noinspection PhpUndefinedFieldInspection */
         $this->_setStrictMode = isset($xfConfig->db->strictMode) ? (boolean)$xfConfig->db->strictMode : true;
+        /** @noinspection PhpUndefinedFieldInspection */
         $this->_slave_config = empty($xfConfig->db->slaves) ? [] : $xfConfig->db->slaves->toArray();
+        /** @noinspection PhpUndefinedFieldInspection */
         if (!empty($xfConfig->db->master))
         {
+            /** @noinspection PhpUndefinedFieldInspection */
             $this->_initialTransactionlevel = empty($xfConfig->db->master->initialTransactionlevel) ? null : $xfConfig->db->master->initialTransactionlevel;
+            /** @noinspection PhpUndefinedFieldInspection */
             $this->_transactionTransactionlevel = empty($xfConfig->db->master->transactionTransactionlevel) ? null : $xfConfig->db->master->transactionTransactionlevel;
         }
         $this->_usingMaster = empty($this->_slave_config);
@@ -210,7 +219,7 @@ class SV_MysqlReplication_Masterslave extends Zend_Db_Adapter_Mysqli
      * @param array $bind
      * @return bool
      */
-    public function checkForWrites($sql, $bind)
+    public function checkForWrites($sql, /** @noinspection PhpUnusedParameterInspection */$bind)
     {
         if (stripos($sql, 'select') === 0 && stripos($sql, 'for update') === false && stripos($sql, 'is_used_lock') === false && stripos($sql, 'get_lock') === false || stripos($sql, 'explain') === 0)
         {
@@ -218,6 +227,52 @@ class SV_MysqlReplication_Masterslave extends Zend_Db_Adapter_Mysqli
         }
 
         return true;
+    }
+
+    /**
+     * List of file names that force to use master server instead of slave
+     *
+     * @var array
+     */
+    protected $_filesThatForceMaster = array(
+        'admin.php',
+        'deferred.php'
+    );
+
+    /**
+     * Checks if the current script requires going through master every time
+     *
+     * @param string $sql
+     * @param array $bind
+     *
+     * @return bool
+     */
+    public function checkIfFileForcesMaster(/** @noinspection PhpUnusedParameterInspection */$sql, $bind)
+    {
+        $xfConfig = XenForo_Application::getConfig();
+        $enableForcedUseMasterForSpecialFiles = false;
+        /** @noinspection PhpUndefinedFieldInspection */
+        if (!empty($xfConfig->db->force_use_master_for_special_files))
+        {
+            /** @noinspection PhpUndefinedFieldInspection */
+            $enableForcedUseMasterForSpecialFiles = (bool)$xfConfig->db->force_use_master_for_special_files;
+        }
+
+        if ($enableForcedUseMasterForSpecialFiles)
+        {
+            $currentFileName = $_SERVER['SCRIPT_FILENAME'];
+            $currentFileStrLen = utf8_strlen($currentFileName);
+
+            foreach ($this->_filesThatForceMaster AS $fileNameThatForceMaster)
+            {
+                if (utf8_substr($currentFileName, ($currentFileStrLen - utf8_strlen($fileNameThatForceMaster))) === $fileNameThatForceMaster)
+                {
+                    return true;
+                }
+            }
+        }
+
+        return false;
     }
 
     /**
@@ -236,7 +291,7 @@ class SV_MysqlReplication_Masterslave extends Zend_Db_Adapter_Mysqli
      * @param array                 $bind
      * @return Zend_Db_Statement_Interface
      */
-    protected function _slaveQuery($slaveId, $sql, $bind = [])
+    protected function _slaveQuery(/** @noinspection PhpUnusedParameterInspection */$slaveId, $sql, $bind = [])
     {
         return parent::query($sql, $bind);
     }
@@ -264,7 +319,7 @@ class SV_MysqlReplication_Masterslave extends Zend_Db_Adapter_Mysqli
                 $sql = ltrim($sql);
             }
 
-            if ($this->checkForWrites($sql, $bind))
+            if ($this->checkForWrites($sql, $bind) || $this->checkIfFileForcesMaster($sql, $bind))
             {
                 $this->_usingMaster = true;
                 $this->_connect();
@@ -283,6 +338,7 @@ class SV_MysqlReplication_Masterslave extends Zend_Db_Adapter_Mysqli
         {
             return $this->_usingMaster ? $this->_masterQuery($sql, $bind) : $this->_slaveQuery($this->_connectedSlaveId, $sql, $bind);
         }
+            /** @noinspection PhpRedundantCatchClauseInspection */
         catch (Zend_Db_Adapter_Mysqli_Exception $e)
         {
             // IF this is a readonly connection AND caused by a list of known safe errors; try again once.
